@@ -147,6 +147,43 @@ main {
     font-family: 'Archivo-Bold', sans-serif;
 }
 
+.prompt-text.collapsed {
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.3s ease;
+}
+
+.prompt-text.expanded {
+    cursor: pointer;
+    white-space: normal;
+    max-height: 200px;
+    overflow-y: auto;
+    transition: all 0.3s ease;
+    background-color: rgba(0, 174, 234, 0.1);
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.prompt-text.expanded::-webkit-scrollbar {
+    width: 5px;
+}
+
+.prompt-text.expanded::-webkit-scrollbar-track {
+    background: rgba(18, 43, 66, 0.1);
+    border-radius: 3px;
+}
+
+.prompt-text.expanded::-webkit-scrollbar-thumb {
+    background: #00aeea;
+    border-radius: 3px;
+}
+
+.prompt-text.expanded::-webkit-scrollbar-thumb:hover {
+    background: #0090c5;
+}
+
 .download-container {
     display: flex;
     justify-content: center;
@@ -617,8 +654,8 @@ footer {
 }
 
 .slide-image {
-    max-width: 90%;
-    max-height: 70%;
+    max-width: 84%;
+    max-height: 66%;
     object-fit: contain;
     border: 2px solid #00aeea;
     border-radius: 10px;

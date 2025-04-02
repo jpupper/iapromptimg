@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Configuration
     const apiUrl = 'api/images.php'; // Path to the API endpoint
     const notificationsUrl = 'api/check_notifications.php'; // Path to check for notifications
-    const checkInterval = 3000; // Check for notifications every 3 seconds
+    const checkInterval = 5000; // Check for notifications every 5 seconds
     // URL base para las imágenes (cambiar a la URL del servidor en producción)
     const remoteBaseUrl = 'https://jeyder.com.ar/iaprompt'; // URL base del servidor remoto
     const useRemoteImages = true; // Cambiar a false para usar imágenes locales
@@ -260,6 +260,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Set up check interval
         notificationCheckTimer = setInterval(checkForNotifications, checkInterval);
         console.log('Started checking for notifications every', checkInterval/1000, 'seconds');
+        
+        // Verificar inmediatamente al cargar la página
+        checkForNotifications();
     }
     
     function checkForNotifications() {
@@ -370,6 +373,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }
                 }
+                
+                // Verificar si hay nuevas imágenes en el servidor (fuera del sistema de notificaciones)
+                checkForNewImages();
             })
             .catch(error => {
                 console.error('Error checking for notifications:', error);
@@ -542,8 +548,36 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Crear el texto del prompt
         const promptText = document.createElement('p');
-        promptText.className = 'prompt-text';
-        promptText.textContent = image.prompt || 'Imagen sin descripción';
+        promptText.className = 'prompt-text collapsed';
+        
+        // Obtener el texto completo del prompt
+        const fullPrompt = image.prompt_text || image.prompt || 'Imagen sin descripción';
+        
+        // Crear versión truncada del prompt (primeros 50 caracteres)
+        const truncatedPrompt = fullPrompt.length > 50 ? fullPrompt.substring(0, 50) + '...' : fullPrompt;
+        
+        // Establecer el texto truncado inicialmente
+        promptText.textContent = truncatedPrompt;
+        
+        // Guardar el prompt completo como atributo de datos
+        promptText.dataset.fullPrompt = fullPrompt;
+        
+        // Agregar evento para expandir/colapsar el prompt al hacer clic
+        promptText.addEventListener('click', function(e) {
+            e.stopPropagation(); // Evitar que se active el botón de descarga al hacer clic en la tarjeta
+            
+            if (this.classList.contains('collapsed')) {
+                // Expandir
+                this.textContent = this.dataset.fullPrompt;
+                this.classList.remove('collapsed');
+                this.classList.add('expanded');
+            } else {
+                // Colapsar
+                this.textContent = truncatedPrompt;
+                this.classList.remove('expanded');
+                this.classList.add('collapsed');
+            }
+        });
         
         // Crear el contenedor de descarga
         const downloadContainer = document.createElement('div');
@@ -560,10 +594,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // Agregar evento para abrir la imagen en el modal
         card.addEventListener('click', function(e) {
             // Evitar que se active el botón de descarga al hacer clic en la tarjeta
-            if (e.target !== downloadBtn) {
+            if (e.target !== downloadBtn && e.target !== promptText) {
                 modal.style.display = 'block';
                 modalImg.src = image.url;
-                modalCaption.textContent = image.prompt || 'Imagen sin descripción';
+                modalCaption.textContent = fullPrompt;
                 
                 // Asegurar que la cruz de cierre sea visible
                 document.querySelector('.close-modal').style.display = 'flex';
@@ -754,31 +788,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 img.src = 'img/placeholder.png';
             };
             
-            // Intentar obtener el prompt completo
+            // Usar el prompt que ya está guardado en el objeto de imagen
+            // Si no hay prompt, generar uno a partir del nombre del archivo
             let promptText = image.prompt_text || image.prompt;
             
-            // Si el prompt parece estar truncado o está vacío, intentar cargar el archivo de texto
-            if (!promptText || promptText.trim() === '' || promptText.endsWith('...') || promptText.length < 60) {
-                try {
-                    const promptFileUrl = `${image.url.substring(0, image.url.lastIndexOf('.'))}.txt`;
-                    const textResponse = await fetch(promptFileUrl);
-                    if (textResponse.ok) {
-                        promptText = await textResponse.text();
-                        console.log('Prompt cargado desde archivo de texto para slide:', promptText);
-                    }
-                } catch (error) {
-                    console.log('No se pudo cargar el archivo de texto con el prompt para slide');
-                    // Si no hay prompt, usar el nombre del archivo como fallback
-                    if (!promptText) {
-                        const urlParts = image.url.split('/');
-                        const fileName = urlParts[urlParts.length - 1];
-                        const fileWithoutExtension = fileName.split('.')[0];
-                        promptText = fileWithoutExtension.replace(/[-_]/g, ' ')
-                            .split(' ')
-                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                            .join(' ');
-                    }
-                }
+            if (!promptText || promptText.trim() === '') {
+                // Si no hay prompt, usar el nombre del archivo como fallback
+                const urlParts = image.url.split('/');
+                const fileName = urlParts[urlParts.length - 1];
+                const fileWithoutExtension = fileName.split('.')[0];
+                promptText = fileWithoutExtension.replace(/[-_]/g, ' ')
+                    .split(' ')
+                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ');
             }
             
             // Crear el contenedor del prompt
@@ -953,6 +975,140 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearTimeout(autoSlideshowTimer);
                 autoSlideshowTimer = null;
             }
+        }
+    }
+    
+    async function checkForNewImages() {
+        try {
+            // Obtener la lista actual de imágenes del servidor
+            const response = await fetch(apiUrl);
+            
+            if (!response.ok) {
+                throw new Error('Error al obtener las imágenes del servidor');
+            }
+            
+            const serverImages = await response.json();
+            
+            // Si no hay imágenes en el servidor o en la galería, no hay nada que hacer
+            if (!serverImages.length || !allImages.length) {
+                return;
+            }
+            
+            // Verificar si hay imágenes nuevas que no estén en nuestra colección actual
+            const newImages = [];
+            
+            for (const serverImage of serverImages) {
+                // Normalizar URL para comparación
+                let serverImageUrl = serverImage.url;
+                
+                // Si useRemoteImages está activado, usar la URL remota para las imágenes
+                if (useRemoteImages) {
+                    // Si la URL no comienza con http o https, asumimos que es una ruta relativa
+                    if (serverImageUrl && !serverImageUrl.startsWith('http://') && !serverImageUrl.startsWith('https://')) {
+                        // Eliminar la barra inicial si existe
+                        if (serverImageUrl.startsWith('/')) {
+                            serverImageUrl = serverImageUrl.substring(1);
+                        }
+                        
+                        // Construir URL completa con la base remota
+                        serverImageUrl = `${remoteBaseUrl}/${serverImageUrl}`;
+                    }
+                } else {
+                    // Comportamiento original para modo local
+                    if (serverImageUrl && !serverImageUrl.startsWith('http://') && !serverImageUrl.startsWith('https://')) {
+                        // Si no comienza con /, agregarlo
+                        if (!serverImageUrl.startsWith('/')) {
+                            serverImageUrl = '/' + serverImageUrl;
+                        }
+                        
+                        // Construir URL completa con origen local
+                        const baseUrl = window.location.origin;
+                        serverImageUrl = baseUrl + serverImageUrl;
+                    }
+                }
+                
+                // Verificar si esta imagen ya está en nuestra colección
+                const imageExists = allImages.some(img => {
+                    // Extraer el nombre del archivo para comparación
+                    const imgUrlParts = img.url.split('/');
+                    const imgFileName = imgUrlParts[imgUrlParts.length - 1];
+                    
+                    const serverUrlParts = serverImageUrl.split('/');
+                    const serverFileName = serverUrlParts[serverUrlParts.length - 1];
+                    
+                    return imgFileName === serverFileName;
+                });
+                
+                // Si la imagen no existe en nuestra colección, agregarla como nueva
+                if (!imageExists) {
+                    console.log('Nueva imagen detectada en el servidor:', serverImageUrl);
+                    
+                    // Intentar cargar el prompt completo desde el archivo de texto
+                    let promptText = serverImage.prompt;
+                    
+                    try {
+                        // Construir la URL del archivo de texto
+                        const promptFileUrl = `${serverImageUrl.substring(0, serverImageUrl.lastIndexOf('.'))}.txt`;
+                        console.log('Intentando cargar prompt desde:', promptFileUrl);
+                        
+                        const textResponse = await fetch(promptFileUrl);
+                        if (textResponse.ok) {
+                            promptText = await textResponse.text();
+                            console.log('Prompt cargado desde archivo de texto:', promptText);
+                        } else {
+                            throw new Error('No se encontró el archivo de texto');
+                        }
+                    } catch (error) {
+                        console.log('No se pudo cargar el archivo de texto, usando fallback:', error);
+                        
+                        // Si no se puede cargar el archivo de texto o no hay prompt, usar el nombre del archivo
+                        if (!promptText || promptText.trim() === '') {
+                            const urlParts = serverImageUrl.split('/');
+                            const fileName = urlParts[urlParts.length - 1];
+                            // Eliminar la extensión del archivo
+                            const fileWithoutExtension = fileName.split('.')[0];
+                            promptText = fileWithoutExtension.replace(/[-_]/g, ' ')
+                                .split(' ')
+                                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                .join(' ');
+                        }
+                    }
+                    
+                    // Crear objeto de imagen
+                    const newImage = {
+                        url: serverImageUrl,
+                        prompt: promptText,
+                        prompt_text: promptText, // Guardar el prompt completo
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    newImages.push(newImage);
+                }
+            }
+            
+            // Si se encontraron nuevas imágenes, mostrarlas
+            if (newImages.length > 0) {
+                console.log(`Se encontraron ${newImages.length} nuevas imágenes en el servidor`);
+                
+                // Agregar las nuevas imágenes a nuestra colección
+                allImages = [...newImages, ...allImages];
+                
+                // Mostrar la última imagen como carta legendaria
+                await showLegendaryCard(newImages[0]);
+                
+                // Si estamos en modo automático, actualizar el slideshow
+                if (currentGalleryMode === 'auto') {
+                    await updateAutoSlideshowSlides();
+                } else {
+                    // Actualizar la galería en modo normal
+                    renderGallery();
+                }
+                
+                // Mostrar notificación
+                showNotification(`Se ${newImages.length === 1 ? 'ha' : 'han'} detectado ${newImages.length} ${newImages.length === 1 ? 'nueva imagen' : 'nuevas imágenes'}`);
+            }
+        } catch (error) {
+            console.error('Error al verificar nuevas imágenes:', error);
         }
     }
 });
