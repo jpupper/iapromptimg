@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galería de Imágenes IA</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/button.css">
+</head>
+<body>
+    <button id="fullscreenButton" class="fullscreen-button">Fullscreen</button>
+    <a href="http://192.168.0.135:3000/" class="generator-button" id="generatorButton">Generador</a>
+    
+    <header>
+        <div class="logo-container">
+            <img src="img2/logo.png" alt="Logo" class="logo">
+        </div>
+        <h1>Galería de Imágenes Generadas por IA</h1>
+        <h1>Subi tu foto : #ExpoLuján</h1>
+    </header>
+
+    <main>
+        <div class="gallery-container">
+            <div id="gallery" class="gallery">
+                <!-- Las imágenes se cargarán dinámicamente aquí -->
+            </div>
+        </div>
+        
+        <!-- Modal para ver imagen ampliada -->
+        <div id="imageModal" class="modal">
+            <div class="modal-wrapper">
+                <span class="close-modal">&times;</span>
+                <img class="modal-content" id="modalImage">
+                <div id="modalCaption"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loading indicator -->
+    <div id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            
+           
+            <div class="footer-logo">
+                <img src="img2/logomunicipalidad.png" alt="Logo Municipalidad" class="logo-footer">
+            </div>
+            <div class="footer-logo">
+                <img src="img2/logojeyder.png" alt="Logo Footer" class="logo-footer">
+            </div>
+            <p>&copy; 2025 </p>
+        </div>
+    </footer>
+
+    <script src="shader.js"></script>
+    <script>
+        new ShaderBackground();
+    </script>
+    <script src="js/gallery.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+config.js
+
+# Generated images
+public/imagenes/**/*.png
+public/imagenes/**/*.jpg
+public/imagenes/**/*.jpeg
+public/imagenes/**/*.gif
+public/imagenes/**/*.webp
+
+# Specific JSON files to exclude
+# workflow_api.json
+# workflow_api_newnotworking.json
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/button.css">
+    <title>AI generation</title>
+</head>
+<body>
+    <button id="fullscreenButton" class="fullscreen-button">Fullscreen</button>
+    
+    <!-- Botón de Galería en la esquina inferior izquierda -->
+    <a href="https://jeyder.com.ar/iaprompt/" class="gallery-button" id="galleryButton">Galeria</a>
+    
+    <div class="main-container">
+        <div id="generatorPanel" class="panel">
+            <div class="header">
+                <img src="img/logo.png" alt="Logo" class="logo">
+                <h1>Generador de Imágenes IA</h1>
+                <h1>#ExpoLuján</h1>
+            </div>
+            <div class="form-group">
+                <div class="prompt-container">
+                    <textarea name="textarea" id="prompt" placeholder="Ingrese su prompt"></textarea>
+                    <button id="improveButton" class="improve-button">Mejorar</button>
+                </div>
+            </div>
+            
+            <div class="form-group upload-container">
+                <label for="imageUpload" class="upload-label">Imagen de referencia (opcional):</label>
+                <input type="file" id="imageUpload" name="imageUpload" accept="image/*" class="file-input">
+                <div id="uploadPreview" class="upload-preview" style="display: none;">
+                    <img id="previewImage" src="#" alt="Vista previa">
+                    <button id="removeImage" class="remove-button">×</button>
+                </div>
+            </div>
+            
+            <button id="advancedToggle" class="toggle-button">
+                Avanzado <span class="arrow-icon">&#9660;</span>
+            </button>
+            
+            <div id="advancedOptions" class="advanced-options" style="display: none;">
+                <div class="form-group slider-container">
+                    <label for="steps">Steps: <span id="stepsValue">25</span></label>
+                    <input type="range" id="steps" name="steps" min="1" max="50" value="25" class="slider">
+                </div>
+                <div class="form-group slider-container">
+                    <label for="cfg">CFG: <span id="cfgValue">1.0</span></label>
+                    <input type="range" id="cfg" name="cfg" min="0" max="2" value="1.0" step="0.1" class="slider">
+                </div>
+                <div class="form-group slider-container" id="denoiseContainer" style="display: none;">
+                    <label for="denoise">Fuerza de modificación: <span id="denoiseValue">0.75</span></label>
+                    <input type="range" id="denoise" name="denoise" min="0.1" max="1.0" value="0.75" step="0.05" class="slider">
+                    <div class="slider-description">Valores bajos conservan más la imagen original, valores altos generan más cambios.</div>
+                </div>
+                <div class="form-group seed-container">
+                    <label for="seed">Seed:</label>
+                    <div class="seed-input-group">
+                        <input type="number" id="seed" name="seed" min="1" max="18446744073709551615" value="42" class="seed-input">
+                        <button type="button" id="randomSeed" class="random-seed-button" title="Generar seed aleatoria">
+                            <span class="dice-icon">🎲</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <button id="generateButton">Generar Imagen</button>
+            
+            <div id="progressContainer" style="display: none;">
+                <div class="progress-bar-container">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <div id="progressInfo" class="progress-info">Preparando generación...</div>
+            </div>
+        </div>
+        
+        <div id="resultPanel" class="panel" style="display: none;">
+            <div class="result-header">
+                <button id="backButton" class="back-button">
+                    <span class="back-arrow">&#8592;</span> Volver al generador
+                </button>
+            </div>
+            <div id="imageContainer" class="image-result">
+                <!-- Aquí se insertará dinámicamente la imagen -->
+            </div>
+            <div id="promptDisplay" class="prompt-display">
+                <!-- Aquí se mostrará el prompt utilizado -->
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-logo">
+                <img src="img/logomunicipalidad.png" alt="Logo Municipalidad" class="logo-footer">
+            </div>
+            <div class="footer-logo">
+                <img src="img/logojeyder.png" alt="Logo Footer" class="logo-footer">
+            </div>
+            <p>&copy; 2025 </p>
+        </div>
+    </footer>
+
+    <script src="shader.js"></script>
+    <script>
+        new ShaderBackground();
+    </script>
+    <script src="js/promptImprover.js"></script>
+    <script src="js/script.js"></script>
+</body>
+</html>
