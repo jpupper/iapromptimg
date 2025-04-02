@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // });
     
     // Keyboard event listeners
-    document.addEventListener('keydown', function(event) {
+    document.addEventListener('keydown', async function(event) {
         // Tecla 'F' para activar/desactivar pantalla completa
         if (event.key === 'f' || event.key === 'F') {
             toggleFullScreen();
@@ -212,18 +212,18 @@ document.addEventListener('DOMContentLoaded', function() {
         // Tecla 'o' para mostrar la carta legendaria con la última imagen
         if (event.key === 'o' || event.key === 'O') {
             if (allImages.length > 0) {
-                showLegendaryCard(allImages[0]);
+                await showLegendaryCard(allImages[0]);
             }
         }
         
         // Tecla '1' para activar el modo de galería por defecto
         if (event.key === '1') {
-            setGalleryMode('default');
+            await setGalleryMode('default');
         }
         
         // Tecla '2' para activar el modo de galería automático
         if (event.key === '2') {
-            setGalleryMode('auto');
+            await setGalleryMode('auto');
         }
         
         // Tecla 'K' para mostrar/ocultar botones de navegación
@@ -271,7 +271,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 return response.json();
             })
-            .then(data => {
+            .then(async data => {
                 if (!data.success) {
                     console.error('Error en la respuesta de notificaciones:', data.message);
                     return;
@@ -285,7 +285,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     const notificationIds = [];
                     const newImages = [];
                     
-                    data.notifications.forEach(notification => {
+                    // Procesar cada notificación de forma asíncrona
+                    for (const notification of data.notifications) {
                         // Add to our list of IDs to mark as read
                         notificationIds.push(notification.id);
                         
@@ -304,28 +305,45 @@ document.addEventListener('DOMContentLoaded', function() {
                             imageUrl = baseUrl + imageUrl;
                         }
                         
-                        // Extraer el nombre del archivo de la URL
-                        let promptText = notification.prompt;
-                        if (!promptText) {
-                            // Obtener el nombre del archivo de la URL
-                            const urlParts = imageUrl.split('/');
-                            const fileName = urlParts[urlParts.length - 1];
-                            // Eliminar la extensión del archivo
-                            promptText = fileName.split('.')[0];
-                            // Reemplazar guiones y guiones bajos por espacios y capitalizar cada palabra
-                            promptText = promptText.replace(/[-_]/g, ' ')
-                                .split(' ')
-                                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                                .join(' ');
+                        // Intentar cargar el prompt completo desde el archivo de texto
+                        let promptText = notification.prompt_text || notification.prompt;
+                        
+                        try {
+                            // Construir la URL del archivo de texto
+                            const promptFileUrl = `${imageUrl.substring(0, imageUrl.lastIndexOf('.'))}.txt`;
+                            console.log('Intentando cargar prompt desde:', promptFileUrl);
+                            
+                            const textResponse = await fetch(promptFileUrl);
+                            if (textResponse.ok) {
+                                promptText = await textResponse.text();
+                                console.log('Prompt cargado desde archivo de texto:', promptText);
+                            } else {
+                                throw new Error('No se encontró el archivo de texto');
+                            }
+                        } catch (error) {
+                            console.log('No se pudo cargar el archivo de texto, usando fallback:', error);
+                            
+                            // Si no se puede cargar el archivo de texto o no hay prompt, usar el nombre del archivo
+                            if (!promptText) {
+                                const urlParts = imageUrl.split('/');
+                                const fileName = urlParts[urlParts.length - 1];
+                                // Eliminar la extensión del archivo
+                                const fileWithoutExtension = fileName.split('.')[0];
+                                promptText = fileWithoutExtension.replace(/[-_]/g, ' ')
+                                    .split(' ')
+                                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                    .join(' ');
+                            }
                         }
                         
                         console.log('URL de imagen procesada:', imageUrl);
-                        console.log('Prompt extraído:', promptText);
+                        console.log('Prompt final:', promptText);
                         
                         // Create image object
                         const newImage = {
                             url: imageUrl,
                             prompt: promptText,
+                            prompt_text: promptText, // Guardar el prompt completo
                             equipo: notification.equipo,
                             timestamp: notification.timestamp
                         };
@@ -334,21 +352,21 @@ document.addEventListener('DOMContentLoaded', function() {
                         console.log('Nueva imagen recibida:', newImage);
                         
                         newImages.push(newImage);
-                    });
+                    }
                     
                     // Add new images to our collection
                     if (newImages.length > 0) {
                         allImages = [...newImages, ...allImages];
                         
                         // Mostrar la última imagen como carta legendaria
-                        showLegendaryCard(newImages[0]);
+                        await showLegendaryCard(newImages[0]);
                         
                         // Marcar notificaciones como leídas inmediatamente
                         markNotificationsAsRead(notificationIds);
                         
                         // Si estamos en modo automático, actualizar el slideshow
                         if (currentGalleryMode === 'auto') {
-                            updateAutoSlideshowSlides();
+                            await updateAutoSlideshowSlides();
                         }
                     }
                 }
@@ -394,7 +412,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const rawImages = await response.json();
             
             // Procesar cada imagen para asegurarse de que tengan URLs válidas y nombres extraídos
-            allImages = rawImages.map(image => {
+            const processedImages = [];
+            
+            for (const image of rawImages) {
                 // Asegurarse de que la URL sea válida
                 let imageUrl = image.url;
                 
@@ -424,28 +444,40 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
                 
-                // Si no hay prompt, extraer del nombre de archivo
+                // Intentar cargar el archivo de texto con el prompt completo
                 let promptText = image.prompt;
-                if (!promptText) {
-                    // Obtener el nombre del archivo de la URL
-                    const urlParts = imageUrl.split('/');
-                    const fileName = urlParts[urlParts.length - 1];
-                    // Eliminar la extensión del archivo
-                    promptText = fileName.split('.')[0];
-                    // Reemplazar guiones y guiones bajos por espacios y capitalizar cada palabra
-                    promptText = promptText.replace(/[-_]/g, ' ')
-                        .split(' ')
-                        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                        .join(' ');
+                
+                if (!promptText || promptText.trim() === '') {
+                    // Intentar cargar el archivo de texto
+                    try {
+                        const promptFileUrl = `${imageUrl.substring(0, imageUrl.lastIndexOf('.'))}.txt`;
+                        const textResponse = await fetch(promptFileUrl);
+                        if (textResponse.ok) {
+                            promptText = await textResponse.text();
+                        } else {
+                            throw new Error('Archivo de texto no encontrado');
+                        }
+                    } catch (error) {
+                        console.log('No se encontró archivo de texto para:', imageUrl);
+                        // Si no se puede cargar el archivo de texto, extraer del nombre de archivo
+                        const urlParts = imageUrl.split('/');
+                        const fileName = urlParts[urlParts.length - 1];
+                        const fileWithoutExtension = fileName.split('.')[0];
+                        promptText = fileWithoutExtension.replace(/[-_]/g, ' ')
+                            .split(' ')
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                            .join(' ');
+                    }
                 }
                 
-                return {
+                processedImages.push({
                     ...image,
                     url: imageUrl,
                     prompt: promptText
-                };
-            });
+                });
+            }
             
+            allImages = processedImages;
             renderGallery();
             
         } catch (error) {
@@ -582,7 +614,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 3000);
     }
     
-    function showLegendaryCard(image) {
+    async function showLegendaryCard(image) {
         // Detener el slideshow automático si está activo
         if (autoSlideshowTimer) {
             clearTimeout(autoSlideshowTimer);
@@ -610,10 +642,36 @@ document.addEventListener('DOMContentLoaded', function() {
         cardTitle.className = 'legendary-card-title';
         cardTitle.innerHTML = '<h1>¡NUEVA IMAGEN GENERADA!</h1>';
         
+        // Intentar obtener el prompt completo desde el archivo de texto si no está disponible
+        let promptText = image.prompt_text || image.prompt;
+        
+        if (!promptText || promptText.trim() === '') {
+            // Intentar cargar el archivo de texto con el prompt completo
+            try {
+                const promptFileUrl = `${image.url.substring(0, image.url.lastIndexOf('.'))}.txt`;
+                const textResponse = await fetch(promptFileUrl);
+                if (textResponse.ok) {
+                    promptText = await textResponse.text();
+                } else {
+                    throw new Error('Archivo de texto no encontrado');
+                }
+            } catch (error) {
+                console.log('No se pudo cargar el archivo de texto con el prompt');
+                // Si no se puede cargar el archivo de texto, extraer del nombre de archivo
+                const urlParts = image.url.split('/');
+                const fileName = urlParts[urlParts.length - 1];
+                const fileWithoutExtension = fileName.split('.')[0];
+                promptText = fileWithoutExtension.replace(/[-_]/g, ' ')
+                    .split(' ')
+                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                    .join(' ');
+            }
+        }
+        
         // Crear el prompt
         const cardPrompt = document.createElement('div');
         cardPrompt.className = 'legendary-card-prompt';
-        cardPrompt.textContent = image.prompt || 'Imagen sin descripción';
+        cardPrompt.textContent = promptText || 'Imagen sin descripción';
         
         // Agregar elementos al frame
         cardFrame.appendChild(cardImage);
@@ -651,7 +709,101 @@ document.addEventListener('DOMContentLoaded', function() {
         }, legendaryCardDisplayTime);
     }
     
-    function setGalleryMode(mode) {
+    async function updateAutoSlideshowSlides() {
+        // Limpiar el contenedor de slides
+        const slidesContainer = autoSlideshowContainer.querySelector('.slides-container');
+        slidesContainer.innerHTML = '';
+        
+        // Ordenar imágenes por más recientes primero
+        allImages.sort((a, b) => {
+            return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+        });
+        
+        // Crear un conjunto para rastrear URLs únicas
+        const uniqueUrls = new Set();
+        const uniqueImages = [];
+        
+        // Filtrar imágenes únicas
+        allImages.forEach(image => {
+            if (!uniqueUrls.has(image.url)) {
+                uniqueUrls.add(image.url);
+                uniqueImages.push(image);
+            }
+        });
+        
+        // Crear slides para cada imagen única
+        for (let index = 0; index < uniqueImages.length; index++) {
+            const image = uniqueImages[index];
+            const slide = document.createElement('div');
+            slide.className = 'slide';
+            
+            // Agregar clase 'active' al slide actual
+            if (index === currentSlideIndex) {
+                slide.classList.add('active');
+            }
+            
+            // Crear la imagen
+            const img = document.createElement('img');
+            img.src = image.url;
+            img.alt = image.prompt || 'Imagen generada por IA';
+            img.className = 'slide-image';
+            
+            // Manejar errores de carga
+            img.onerror = function() {
+                console.error('Error al cargar la imagen:', image.url);
+                img.src = 'img/placeholder.png';
+            };
+            
+            // Intentar obtener el prompt completo
+            let promptText = image.prompt_text || image.prompt;
+            
+            // Si el prompt parece estar truncado o está vacío, intentar cargar el archivo de texto
+            if (!promptText || promptText.trim() === '' || promptText.endsWith('...') || promptText.length < 60) {
+                try {
+                    const promptFileUrl = `${image.url.substring(0, image.url.lastIndexOf('.'))}.txt`;
+                    const textResponse = await fetch(promptFileUrl);
+                    if (textResponse.ok) {
+                        promptText = await textResponse.text();
+                        console.log('Prompt cargado desde archivo de texto para slide:', promptText);
+                    }
+                } catch (error) {
+                    console.log('No se pudo cargar el archivo de texto con el prompt para slide');
+                    // Si no hay prompt, usar el nombre del archivo como fallback
+                    if (!promptText) {
+                        const urlParts = image.url.split('/');
+                        const fileName = urlParts[urlParts.length - 1];
+                        const fileWithoutExtension = fileName.split('.')[0];
+                        promptText = fileWithoutExtension.replace(/[-_]/g, ' ')
+                            .split(' ')
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                            .join(' ');
+                    }
+                }
+            }
+            
+            // Crear el contenedor del prompt
+            const promptContainer = document.createElement('div');
+            promptContainer.className = 'slide-caption';
+            promptContainer.textContent = promptText || 'Imagen sin descripción';
+            
+            // Agregar elementos al slide
+            slide.appendChild(img);
+            slide.appendChild(promptContainer);
+            
+            // Agregar slide al contenedor
+            slidesContainer.appendChild(slide);
+        }
+        
+        // Reiniciar el índice del slide actual
+        currentSlideIndex = 0;
+        
+        // Mostrar el primer slide
+        if (uniqueImages.length > 0) {
+            showSlide(currentSlideIndex);
+        }
+    }
+    
+    async function setGalleryMode(mode) {
         // Detener cualquier slideshow automático en curso
         if (autoSlideshowTimer) {
             clearTimeout(autoSlideshowTimer);
@@ -678,7 +830,7 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('Modo de galería normal activado');
         } else if (mode === 'auto') {
             // Mostrar el slideshow automático
-            updateAutoSlideshowSlides();
+            await updateAutoSlideshowSlides();
             autoSlideshowContainer.style.display = 'flex';
             
             // Asegurar que el contenedor principal tenga el estilo correcto
@@ -697,72 +849,6 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => {
                 showSlide(currentSlideIndex);
             }, 100);
-        }
-    }
-    
-    function updateAutoSlideshowSlides() {
-        // Limpiar el contenedor de slides
-        const slidesContainer = autoSlideshowContainer.querySelector('.slides-container');
-        slidesContainer.innerHTML = '';
-        
-        // Ordenar imágenes por más recientes primero
-        allImages.sort((a, b) => {
-            return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
-        });
-        
-        // Crear un conjunto para rastrear URLs únicas
-        const uniqueUrls = new Set();
-        const uniqueImages = [];
-        
-        // Filtrar imágenes únicas
-        allImages.forEach(image => {
-            if (!uniqueUrls.has(image.url)) {
-                uniqueUrls.add(image.url);
-                uniqueImages.push(image);
-            }
-        });
-        
-        // Crear slides para cada imagen única
-        uniqueImages.forEach((image, index) => {
-            const slide = document.createElement('div');
-            slide.className = 'slide';
-            
-            // Agregar clase 'active' al slide actual
-            if (index === currentSlideIndex) {
-                slide.classList.add('active');
-            }
-            
-            // Crear la imagen
-            const img = document.createElement('img');
-            img.src = image.url;
-            img.alt = image.prompt || 'Imagen generada por IA';
-            img.className = 'slide-image';
-            
-            // Manejar errores de carga
-            img.onerror = function() {
-                console.error('Error al cargar la imagen:', image.url);
-                img.src = 'img/placeholder.png';
-            };
-            
-            // Crear el contenedor del prompt
-            const promptContainer = document.createElement('div');
-            promptContainer.className = 'slide-caption';
-            promptContainer.textContent = image.prompt || 'Imagen sin descripción';
-            
-            // Agregar elementos al slide
-            slide.appendChild(img);
-            slide.appendChild(promptContainer);
-            
-            // Agregar slide al contenedor
-            slidesContainer.appendChild(slide);
-        });
-        
-        // Reiniciar el índice del slide actual
-        currentSlideIndex = 0;
-        
-        // Mostrar el primer slide
-        if (uniqueImages.length > 0) {
-            showSlide(currentSlideIndex);
         }
     }
     
@@ -810,8 +896,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Obtener todos los slides
         const slides = autoSlideshowContainer.querySelectorAll('.slide');
         
+        // Calcular el siguiente índice
+        currentSlideIndex = (currentSlideIndex + 1) % slides.length;
+        
         // Mostrar el siguiente slide
-        showSlide((currentSlideIndex + 1) % slides.length);
+        showSlide(currentSlideIndex);
         
         // Reiniciar el slideshow automático si está habilitado
         if (isAutoSlideshowPlaying) {
@@ -829,8 +918,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Obtener todos los slides
         const slides = autoSlideshowContainer.querySelectorAll('.slide');
         
+        // Calcular el índice anterior
+        currentSlideIndex = (currentSlideIndex - 1 + slides.length) % slides.length;
+        
         // Mostrar el slide anterior
-        showSlide((currentSlideIndex - 1 + slides.length) % slides.length);
+        showSlide(currentSlideIndex);
         
         // Reiniciar el slideshow automático si está habilitado
         if (isAutoSlideshowPlaying) {

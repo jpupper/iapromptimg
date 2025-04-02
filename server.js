@@ -155,9 +155,18 @@ wsComfy.on('message', async (data) => {
                     await downloadImage(imageUrl, filename, subfolder);
                     console.log(`Downloaded image: ${filename}`);
                     
+                    // Guardar el prompt completo en un archivo de texto con el mismo nombre
+                    const promptTextFilename = path.join(__dirname, 'public', 'imagenes', subfolder, `${promptFileName}.txt`);
+                    fs.writeFileSync(promptTextFilename, details.prompt, 'utf8');
+                    console.log(`Saved prompt to text file: ${promptTextFilename}`);
+                    
                     // Upload the image to the remote server
                     const remoteUrl = await uploadToRemoteServer(filename, subfolder, details.equipo);
                     console.log(`Uploaded image to remote server: ${remoteUrl}`);
+
+                    // También subir el archivo de texto con el prompt al servidor remoto
+                    const remotePromptUrl = await uploadToRemoteServer(promptTextFilename, subfolder, details.equipo);
+                    console.log(`Uploaded prompt text file to remote server: ${remotePromptUrl}`);
 
                     wss.clients.forEach(client => {
                         if (client.readyState === WebSocket.OPEN && client.equipo === details.equipo) {
@@ -167,7 +176,8 @@ wsComfy.on('message', async (data) => {
                                 remoteUrl: remoteUrl, // Add the remote URL to the message
                                 equipo: details.equipo,
                                 prompt: details.prompt,  // Envío del prompt original
-                                prompt_id: promptId
+                                prompt_id: promptId,
+                                prompt_text: details.prompt // Envío del prompt completo
                             }));
                         }
                     });
@@ -507,7 +517,19 @@ async function downloadImage(url, filename, subfolder) {
 async function uploadToRemoteServer(localFilePath, subfolder, equipo) {
     try {
         const formData = new FormData();
-        formData.append('image', fs.createReadStream(localFilePath));
+        
+        // Determinar si es un archivo de texto o una imagen basado en la extensión
+        const fileExtension = path.extname(localFilePath).toLowerCase();
+        const isTextFile = fileExtension === '.txt';
+        
+        // Agregar el archivo al FormData con el nombre de campo apropiado
+        if (isTextFile) {
+            formData.append('prompt_file', fs.createReadStream(localFilePath));
+            // Agregar un campo adicional para indicar que es un archivo de prompt
+            formData.append('is_prompt_file', 'true');
+        } else {
+            formData.append('image', fs.createReadStream(localFilePath));
+        }
         
         // Add equipo parameter if available
         if (equipo) {
@@ -529,13 +551,16 @@ async function uploadToRemoteServer(localFilePath, subfolder, equipo) {
             // Notify the gallery about the new image - hacemos esto en un try/catch separado
             // para que no afecte al flujo principal si falla
             try {
-                await axios.post('https://jeyder.com.ar/iaprompt/api/notify.php', {
-                    url: response.data.url,
-                    prompt: promptDetails[response.data.prompt_id]?.prompt || '',
-                    equipo: equipo || '',
-                    timestamp: new Date().toISOString()
-                }, { timeout: 10000 }); // 10 segundos de timeout para la notificación
-                console.log('Gallery notification sent successfully');
+                // Solo notificar a la galería si es una imagen, no un archivo de texto
+                if (!isTextFile) {
+                    await axios.post('https://jeyder.com.ar/iaprompt/api/notify.php', {
+                        url: response.data.url,
+                        prompt: promptDetails[response.data.prompt_id]?.prompt || '',
+                        equipo: equipo || '',
+                        timestamp: new Date().toISOString()
+                    }, { timeout: 10000 }); // 10 segundos de timeout para la notificación
+                    console.log('Gallery notification sent successfully');
+                }
             } catch (notifyError) {
                 console.error('Error notifying gallery:', notifyError.message);
                 // No retornamos null aquí, continuamos con el flujo normal

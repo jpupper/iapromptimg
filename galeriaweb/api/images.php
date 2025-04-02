@@ -66,7 +66,7 @@ function scanImagesDirectory($dir) {
                     'url' => $baseUrl . $relativePath,
                     'equipo' => $equipo,
                     'timestamp' => date('Y-m-d H:i:s', $timestamp),
-                    'prompt' => getPromptFromFilename($item) // Extract prompt from filename if available
+                    'prompt' => getPromptFromFilename($item, $path) // Pass the path as well
                 ];
             }
         }
@@ -76,11 +76,19 @@ function scanImagesDirectory($dir) {
 }
 
 // Function to extract prompt from filename (if your system stores prompts in filenames)
-function getPromptFromFilename($filename) {
+function getPromptFromFilename($filename, $imagePath) {
     // Get filename without extension
     $name = pathinfo($filename, PATHINFO_FILENAME);
     
-    // Replace underscores with spaces to get the original prompt
+    // Check if there's a corresponding text file with the prompt
+    $textFilePath = dirname($imagePath) . '/' . $name . '.txt';
+    
+    if (file_exists($textFilePath)) {
+        // If text file exists, read the prompt from it
+        return file_get_contents($textFilePath);
+    }
+    
+    // Fallback: Replace underscores with spaces to get the original prompt from filename
     $prompt = str_replace('_', ' ', $name);
     
     // Capitalize first letter for better presentation
