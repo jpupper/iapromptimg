@@ -602,6 +602,10 @@ ws.onmessage = (event) => {
 function sendGenerationRequest(prompt, steps, cfg, imageFilename = null, seed = null, denoise = null) {
     console.log('Sending generarImagen request with prompt:', prompt, 'steps:', steps, 'cfg:', cfg, 'and equipo:', equiposelect);
     
+    // Obtener los valores de nombre y email
+    const userName = document.getElementById('userName').value.trim();
+    const userEmail = document.getElementById('userEmail').value.trim();
+    
     // Actualizar la barra de progreso para indicar que estamos iniciando
     updateProgressBar(0, steps, 'iniciando', 'Enviando solicitud de generación...');
     
@@ -611,7 +615,9 @@ function sendGenerationRequest(prompt, steps, cfg, imageFilename = null, seed = 
         steps,
         cfg,
         equipo: equiposelect,
-        timestamp: Date.now() // Añadir timestamp para rastreo
+        timestamp: Date.now(), // Añadir timestamp para rastreo
+        userName: userName,    // Añadir nombre del usuario
+        userEmail: userEmail   // Añadir email del usuario
     };
     
     // Si hay una imagen, agregar el nombre de archivo y el valor de denoise al request

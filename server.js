@@ -168,6 +168,7 @@ wsComfy.on('message', async (data) => {
                     const remotePromptUrl = await uploadToRemoteServer(promptTextFilename, subfolder, details.equipo);
                     console.log(`Uploaded prompt text file to remote server: ${remotePromptUrl}`);
 
+                    // Enviar notificación a los clientes
                     wss.clients.forEach(client => {
                         if (client.readyState === WebSocket.OPEN && client.equipo === details.equipo) {
                             client.send(JSON.stringify({
@@ -181,6 +182,41 @@ wsComfy.on('message', async (data) => {
                             }));
                         }
                     });
+                    
+                    // Enviar email si se proporcionó una dirección de correo
+                    if (details.userEmail && details.userEmail.trim() !== '') {
+                        try {
+                            console.log(`Enviando email a ${details.userEmail} con la imagen generada`);
+                            
+                            // Esperar a que la imagen esté disponible en el servidor remoto
+                            // antes de enviar el correo electrónico
+                            const emailData = {
+                                email: details.userEmail,
+                                name: details.userName || 'Usuario',
+                                image_url: remoteUrl,
+                                prompt: details.prompt
+                            };
+                            
+                            // Llamar al script PHP para enviar el correo
+                            const emailResponse = await axios.post('http://localhost:3000/send-email', emailData, {
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            console.log('Respuesta del servidor de correo:', emailResponse.data);
+                            
+                            if (emailResponse.data.success) {
+                                console.log(`Email enviado correctamente a ${details.userEmail}`);
+                            } else {
+                                console.error(`Error al enviar email: ${emailResponse.data.message}`);
+                            }
+                        } catch (emailError) {
+                            console.error('Error al enviar el correo electrónico:', emailError);
+                        }
+                    } else {
+                        console.log('No se proporcionó dirección de correo electrónico, omitiendo envío de email');
+                    }
                 } catch (error) {
                     console.error('Error processing generated image:', error);
                     
@@ -199,37 +235,37 @@ wsComfy.on('message', async (data) => {
             }
         }
     } catch (error) {
-        console.error('Error parsing message:', error.message);
+        console.error('Error parsing WebSocket message:', error);
     }
 });
 
 // Configuración de multer para almacenar archivos subidos
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        // Crear directorio de uploads si no existe
-        const uploadDir = path.join(__dirname, 'uploads');
+    destination(req, file, cb) {
+        const equipo = req.body.equipo || '';
+        const uploadDir = path.join(__dirname, 'public', 'uploads', equipo);
+        
+        // Crear directorio si no existe
         if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
         }
+        
         cb(null, uploadDir);
     },
-    filename: function (req, file, cb) {
-        // Generar nombre único para el archivo
+    filename(req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        cb(null, 'input-' + uniqueSuffix + ext);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
     }
 });
 
 const upload = multer({ 
     storage: storage,
     limits: {
-        fileSize: 5 * 1024 * 1024 // Límite de 5MB
+        fileSize: 5 * 1024 * 1024, // 5MB
     },
-    fileFilter: function (req, file, cb) {
-        // Aceptar solo imágenes
+    fileFilter(req, file, cb) {
         if (!file.mimetype.startsWith('image/')) {
-            return cb(new Error('Solo se permiten imágenes'), false);
+            return cb(new Error('Solo se permiten imágenes'));
         }
         cb(null, true);
     }
@@ -238,31 +274,98 @@ const upload = multer({
 // Ruta para subir imágenes
 app.post('/upload', upload.single('image'), (req, res) => {
     if (!req.file) {
-        return res.status(400).json({ error: 'No se subió ningún archivo' });
+        return res.status(400).json({ error: 'No se ha subido ninguna imagen' });
     }
     
-    console.log('Archivo subido:', req.file);
+    console.log('Imagen subida:', req.file);
     
-    // Devolver información del archivo
+    // Devolver la ruta del archivo
     res.json({
+        success: true,
         filename: req.file.filename,
-        path: req.file.path,
-        size: req.file.size
+        path: req.file.path
     });
 });
 
-// Ruta para obtener la API key de OpenAI de forma segura
-app.get('/api/openai-key', (req, res) => {
-    // Obtener la API key desde la configuración
-    const apiKey = config.openaiApiKey;
-    
-    if (!apiKey) {
-        console.error('Error: API key de OpenAI no configurada en el archivo config.js');
-        return res.status(500).json({ error: 'API key no configurada en el servidor' });
+// Ruta para enviar correos electrónicos
+app.post('/send-email', async (req, res) => {
+    try {
+        console.log('Solicitud de envío de correo recibida:', req.body);
+        
+        // Verificar que se recibieron los datos necesarios
+        if (!req.body.image_url) {
+            return res.status(400).json({
+                success: false,
+                message: 'Falta la URL de la imagen'
+            });
+        }
+        
+        // Llamar al script PHP para enviar el correo
+        // Usar la ruta completa al script PHP
+        const phpScriptPath = path.join(__dirname, 'send_mail.php');
+        console.log('Ruta al script PHP:', phpScriptPath);
+        
+        // Verificar que el script PHP existe
+        if (!fs.existsSync(phpScriptPath)) {
+            console.error(`Error: El script PHP no existe en la ruta: ${phpScriptPath}`);
+            return res.status(500).json({
+                success: false,
+                message: 'El script PHP no existe'
+            });
+        }
+        
+        // Ejecutar el script PHP usando child_process
+        const { exec } = require('child_process');
+        
+        // Crear un archivo temporal con los datos JSON
+        const tempDataFile = path.join(__dirname, `temp_mail_data_${Date.now()}.json`);
+        fs.writeFileSync(tempDataFile, JSON.stringify(req.body), 'utf8');
+        
+        // Comando para ejecutar PHP con el archivo de datos como entrada
+        const command = `php "${phpScriptPath}" "${tempDataFile}"`;
+        
+        exec(command, (error, stdout, stderr) => {
+            // Eliminar el archivo temporal
+            try {
+                fs.unlinkSync(tempDataFile);
+            } catch (unlinkError) {
+                console.error('Error al eliminar archivo temporal:', unlinkError);
+            }
+            
+            if (error) {
+                console.error(`Error al ejecutar el script PHP: ${error.message}`);
+                console.error(`stderr: ${stderr}`);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error al ejecutar el script PHP',
+                    error: error.message,
+                    stderr: stderr
+                });
+            }
+            
+            console.log(`Salida del script PHP: ${stdout}`);
+            
+            try {
+                // Intentar analizar la salida como JSON
+                const phpResponse = JSON.parse(stdout);
+                return res.json(phpResponse);
+            } catch (parseError) {
+                // Si no es JSON válido, devolver la salida como texto
+                return res.json({
+                    success: true,
+                    message: 'Correo enviado (respuesta no es JSON)',
+                    output: stdout
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Error al enviar el correo electrónico:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al enviar el correo electrónico',
+            error: error.message
+        });
     }
-    
-    // Devolver la API key al cliente
-    res.json({ apiKey });
 });
 
 wss.on('connection', async (ws, req) => {
@@ -293,7 +396,9 @@ wss.on('connection', async (ws, req) => {
                     message.steps, 
                     message.cfg, 
                     seed, 
-                    denoise
+                    denoise,
+                    message.userName,
+                    message.userEmail
                 );
             } else {
                 // Si no hay imagen, usar txt2img normal
@@ -305,11 +410,18 @@ wss.on('connection', async (ws, req) => {
                     message.equipo, 
                     message.steps, 
                     message.cfg, 
-                    seed
+                    seed,
+                    message.userName,
+                    message.userEmail
                 );
             }
             
-            promptDetails[promptId] = { equipo: message.equipo, prompt: message.prompt }; // Guarda equipo y prompt
+            promptDetails[promptId] = { 
+                equipo: message.equipo, 
+                prompt: message.prompt, 
+                userEmail: message.userEmail, 
+                userName: message.userName 
+            }; // Guarda equipo y prompt
         }
     });
     ws.on('close', () => {
@@ -586,158 +698,163 @@ async function uploadToRemoteServer(localFilePath, subfolder, equipo) {
     }
 }
 
-async function generarImagen(promptText, equipo, steps = 25, cfg = 1.0, seed = null) {
+async function generarImagen(promptText, equipo, steps = 25, cfg = 1.0, seed = null, userName = null, userEmail = null) {
     console.log(`Generating image for prompt: "${promptText}" with steps: ${steps}, cfg: ${cfg}, seed: ${seed || 'random'}`);
+    console.log(`User info: Name: ${userName || 'Not provided'}, Email: ${userEmail || 'Not provided'}`);
     
     try {
         // Leer el workflow
         const workflow = await readWorkflowAPI();
+        if (!workflow) {
+            console.error('Error: No se pudo leer el workflow');
+            return null;
+        }
         
         // Modificar el workflow con los parámetros proporcionados
-        workflow["6"]["inputs"]["text"] = promptText;
-        workflow["3"]["inputs"]["seed"] = seed || Math.floor(Math.random() * 18446744073709551614) + 1;
-        workflow["3"]["inputs"]["steps"] = parseInt(steps);
-        workflow["3"]["inputs"]["cfg"] = parseFloat(cfg);
+        // Nodo de prompt (6)
+        if (workflow["6"] && workflow["6"]["inputs"]) {
+            workflow["6"]["inputs"]["text"] = promptText;
+        } else {
+            console.error('Error: No se encontró el nodo de prompt (6) en el workflow');
+            return null;
+        }
         
-        // Configurar el prefijo del nombre de archivo
-        workflow["9"]["inputs"]["filename_prefix"] = equipo ? `equipo${equipo}/ComfyUI` : "ComfyUI";
+        // Nodo KSampler (3)
+        if (workflow["3"] && workflow["3"]["inputs"]) {
+            // Establecer seed
+            workflow["3"]["inputs"]["seed"] = seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+            
+            // Establecer steps
+            workflow["3"]["inputs"]["steps"] = parseInt(steps);
+            
+            // Establecer cfg
+            workflow["3"]["inputs"]["cfg"] = parseFloat(cfg);
+        } else {
+            console.error('Error: No se encontró el nodo KSampler (3) en el workflow');
+            return null;
+        }
         
-        // Enviar el prompt a ComfyUI
+        // Configurar el prefijo del nombre de archivo si existe el nodo 9
+        if (workflow["9"] && workflow["9"]["inputs"]) {
+            workflow["9"]["inputs"]["filename_prefix"] = equipo ? `equipo${equipo}/ComfyUI` : "ComfyUI";
+        }
+        
+        // Enviar el workflow modificado al servidor de ComfyUI
         const promptId = await queuePrompt(workflow);
-        console.log(`Prompt queued with ID: ${promptId}`);
+        if (!promptId) {
+            console.error('Error: No se pudo encolar el prompt');
+            return null;
+        }
+        
+        console.log(`Prompt ID: ${promptId}`);
         
         // Guardar los detalles del prompt para seguimiento
-        promptDetails[promptId] = {
-            prompt: promptText,
-            equipo: equipo,
-            steps: steps,
-            cfg: cfg,
-            seed: workflow["3"]["inputs"]["seed"],
-            timestamp: Date.now()
+        promptDetails[promptId] = { 
+            equipo, 
+            prompt: promptText, 
+            steps: parseInt(steps),
+            userName: userName || '',
+            userEmail: userEmail || ''
         };
-        
-        // Notificar a los clientes que se ha iniciado la generación
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN && client.equipo === equipo) {
-                const startMessage = {
-                    type: 'generation_progress',
-                    progress: 0,
-                    step: 0,
-                    total_steps: steps,
-                    prompt_id: promptId,
-                    equipo: equipo,
-                    status: 'iniciando',
-                    message: 'Iniciando generación de imagen...'
-                };
-                
-                console.log(`Sending start notification to client (equipo: ${client.equipo}):`, startMessage);
-                client.send(JSON.stringify(startMessage));
-            }
-        });
         
         return promptId;
     } catch (error) {
-        console.error('Error generating image:', error);
-        throw error;
+        console.error('Error en generarImagen:', error);
+        return null;
     }
 }
 
 // Nueva función para generar imagen con referencia (img2img)
-async function generarImagenConReferencia(promptText, imagePath, equipo, steps = 25, cfg = 1.0, seed = null, denoise = 0.75) {
+async function generarImagenConReferencia(promptText, imagePath, equipo, steps = 25, cfg = 1.0, seed = null, denoise = 0.75, userName = null, userEmail = null) {
     console.log(`Generating image with reference for prompt: "${promptText}" with image: ${imagePath}`);
     console.log(`Parameters: steps: ${steps}, cfg: ${cfg}, seed: ${seed || 'random'}, denoise: ${denoise}`);
+    console.log(`User info: Name: ${userName || 'Not provided'}, Email: ${userEmail || 'Not provided'}`);
     
     try {
-        // Subir la imagen de referencia a ComfyUI
-        const uploadResult = await uploadImage(imagePath);
-        console.log('Image uploaded:', uploadResult);
+        // Verificar que la imagen existe
+        if (!fs.existsSync(imagePath)) {
+            console.error(`Error: La imagen de referencia no existe en la ruta: ${imagePath}`);
+            return null;
+        }
         
-        // Leer el workflow base
-        const promptWorkflow = await readWorkflowAPI();
+        // Cargar la imagen y convertirla a base64
+        const imageData = await uploadImage(imagePath);
+        if (!imageData) {
+            console.error('Error: No se pudo cargar la imagen de referencia');
+            return null;
+        }
         
-        // Crear una copia profunda para modificar
-        const img2imgWorkflow = JSON.parse(JSON.stringify(promptWorkflow));
+        // Leer el workflow para img2img
+        let img2imgWorkflow;
+        try {
+            const data = await fs.promises.readFile(path.join(__dirname, 'workflow_img2img.json'), 'utf8');
+            img2imgWorkflow = JSON.parse(data);
+        } catch (error) {
+            console.error('Error al leer el workflow de img2img:', error);
+            return null;
+        }
         
-        // Configurar el prompt
-        img2imgWorkflow["6"]["inputs"]["text"] = promptText;
+        // Modificar el workflow con los parámetros proporcionados
+        // Nodo de prompt (6)
+        if (img2imgWorkflow["6"] && img2imgWorkflow["6"]["inputs"]) {
+            img2imgWorkflow["6"]["inputs"]["text"] = promptText;
+        } else {
+            console.error('Error: No se encontró el nodo de prompt (6) en el workflow de img2img');
+            return null;
+        }
         
-        // Configurar semilla aleatoria o usar la proporcionada
-        img2imgWorkflow["3"]["inputs"]["seed"] = seed || Math.floor(Math.random() * 18446744073709551614) + 1;
-        console.log(`Using seed for img2img: ${img2imgWorkflow["3"]["inputs"]["seed"]}`);
+        // Nodo de carga de imagen (10)
+        if (img2imgWorkflow["10"] && img2imgWorkflow["10"]["inputs"]) {
+            img2imgWorkflow["10"]["inputs"]["image"] = imageData;
+        } else {
+            console.error('Error: No se encontró el nodo de carga de imagen (10) en el workflow de img2img');
+            return null;
+        }
         
-        // Configurar parámetros
-        img2imgWorkflow["3"]["inputs"]["steps"] = parseInt(steps);
-        img2imgWorkflow["3"]["inputs"]["cfg"] = parseFloat(cfg);
+        // Nodo KSampler (3)
+        if (img2imgWorkflow["3"] && img2imgWorkflow["3"]["inputs"]) {
+            // Establecer seed
+            img2imgWorkflow["3"]["inputs"]["seed"] = seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+            
+            // Establecer steps
+            img2imgWorkflow["3"]["inputs"]["steps"] = parseInt(steps);
+            
+            // Establecer cfg
+            img2imgWorkflow["3"]["inputs"]["cfg"] = parseFloat(cfg);
+            
+            // Establecer denoise
+            img2imgWorkflow["3"]["inputs"]["denoise"] = parseFloat(denoise);
+        } else {
+            console.error('Error: No se encontró el nodo KSampler (3) en el workflow de img2img');
+            return null;
+        }
         
-        // Configurar prefijo de nombre de archivo
-        img2imgWorkflow["9"]["inputs"]["filename_prefix"] = equipo ? `equipo${equipo}/ComfyUI_img2img` : "ComfyUI_img2img";
+        // Configurar el prefijo del nombre de archivo si existe el nodo 9
+        if (img2imgWorkflow["9"] && img2imgWorkflow["9"]["inputs"]) {
+            img2imgWorkflow["9"]["inputs"]["filename_prefix"] = equipo ? `equipo${equipo}/ComfyUI` : "ComfyUI";
+        }
         
-        // Agregar nodos para img2img
-        // Nodo LoadImage (ID 20)
-        img2imgWorkflow["20"] = {
-            "inputs": {
-                "image": uploadResult.name
-            },
-            "class_type": "LoadImage",
-            "output_node": false,
-            "output_slot_index": 0
-        };
+        // Enviar el workflow modificado al servidor de ComfyUI
+        const promptId = await queuePrompt(img2imgWorkflow);
+        if (!promptId) {
+            console.error('Error: No se pudo encolar el prompt de img2img');
+            return null;
+        }
         
-        // Nodo VAEEncode (ID 21)
-        img2imgWorkflow["21"] = {
-            "inputs": {
-                "pixels": ["20", 0],
-                "vae": ["4", 2]
-            },
-            "class_type": "VAEEncode",
-            "output_node": false,
-            "output_slot_index": 0
-        };
-        
-        // Modificar el KSampler para usar la imagen codificada en lugar de EmptyLatentImage
-        img2imgWorkflow["3"]["inputs"]["latent_image"] = ["21", 0];
-        
-        // Ajustar el parámetro denoise para img2img con el valor proporcionado
-        img2imgWorkflow["3"]["inputs"]["denoise"] = parseFloat(denoise);
-        console.log(`Using denoise value: ${denoise}`);
+        console.log(`Prompt ID for img2img: ${promptId}`);
         
         // Guardar los detalles del prompt para seguimiento
-        const promptId = await queuePrompt(img2imgWorkflow);
-        
-        promptDetails[promptId] = {
-            prompt: promptText,
-            equipo: equipo,
-            steps: steps,
-            cfg: cfg,
-            seed: img2imgWorkflow["3"]["inputs"]["seed"],
-            denoise: denoise,
-            isImg2Img: true,
-            timestamp: Date.now()
+        promptDetails[promptId] = { 
+            equipo, 
+            prompt: promptText, 
+            steps: parseInt(steps),
+            userName: userName || '',
+            userEmail: userEmail || ''
         };
         
-        // Notificar a los clientes que se ha iniciado la generación
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN && client.equipo === equipo) {
-                const startMessage = {
-                    type: 'generation_progress',
-                    progress: 0,
-                    step: 0,
-                    total_steps: steps,
-                    prompt_id: promptId,
-                    equipo: equipo,
-                    status: 'iniciando',
-                    message: 'Iniciando generación de imagen con referencia...'
-                };
-                
-                console.log(`Sending start notification to client (equipo: ${client.equipo}):`, startMessage);
-                client.send(JSON.stringify(startMessage));
-            }
-        });
-
-        console.log(`Queued img2img prompt with ID: ${promptId} for team: ${equipo}, Steps: ${steps}, CFG: ${cfg}, Seed: ${img2imgWorkflow["3"]["inputs"]["seed"]}, Denoise: ${denoise}`);
         return promptId;
     } catch (error) {
-        console.error('Error generating image with reference:', error);
-        throw error;
+        console.error('Error en generarImagenConReferencia:', error);
+        return null;
     }
 }
