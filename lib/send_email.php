@@ -90,13 +90,15 @@ function send_image_email($to_email, $to_name, $image_path, $prompt = '', $remot
                 .footer { font-size: 12px; text-align: center; margin-top: 20px; color: #666; }
                 .prompt { background-color: #e9e9e9; padding: 10px; border-left: 4px solid #122b42; margin: 15px 0; }
                 .image-container { text-align: center; margin: 20px 0; }
-                .button { display: inline-block; background-color: #122b42; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+                .button { display: inline-block; background-color: #122b42; color: white !important; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+                .logo-container { text-align: center; margin-top: 20px; }
+                a { color: #122b42; text-decoration: none; }
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>¡Tu imagen está lista!</h1>
+                    <h1>Gracias por participar</h1>
                 </div>
                 <div class="content">
                     <p>Hola <strong>' . htmlspecialchars($to_name) . '</strong>,</p>
@@ -123,10 +125,13 @@ function send_image_email($to_email, $to_name, $image_path, $prompt = '', $remot
         }
         
         $body .= '
+                    <div class="logo-container">
+                        <img src="cid:logo-jeyder" style="max-width: 200px; height: auto;" alt="Logo Jeyder">
+                    </div>
                 </div>
                 <div class="footer">
                     <p>Este correo fue enviado automáticamente desde el Generador de Imágenes de Luján.</p>
-                    <p>Por favor no responda a este correo.</p>
+                    <p>Para conocer más sobre Jeyder seguinos en: <a href="https://linktr.ee/jeyder.multimedia" target="_blank">https://linktr.ee/jeyder.multimedia</a></p>
                 </div>
             </div>
         </body>
@@ -137,6 +142,14 @@ function send_image_email($to_email, $to_name, $image_path, $prompt = '', $remot
         
         // Agregar la imagen incrustada en el cuerpo del correo
         $mail->addEmbeddedImage($image_path, 'imagen-generada', basename($image_path));
+        
+        // Agregar el logo de Jeyder
+        $logo_path = __DIR__ . '/../public/img/logojeyder.png';
+        if (file_exists($logo_path)) {
+            $mail->addEmbeddedImage($logo_path, 'logo-jeyder', 'logojeyder.png');
+        } else {
+            error_log("Error: No se encontró el logo de Jeyder en: " . $logo_path);
+        }
         
         // Enviar el correo
         $mail->send();

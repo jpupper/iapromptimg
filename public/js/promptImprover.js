@@ -18,15 +18,32 @@ class PromptImprover {
     async improvePrompt(originalPrompt) {
         try {
             // Obtener la API key desde el servidor
+            console.log('Solicitando API key al servidor...');
             const response = await fetch('/api/openai-key');
-            const data = await response.json();
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`Error al obtener la API key (${response.status}): ${errorText}`);
+                throw new Error(`Error al obtener la API key: ${response.statusText}`);
+            }
+            
+            let data;
+            try {
+                data = await response.json();
+            } catch (jsonError) {
+                console.error('Error al parsear la respuesta JSON:', jsonError);
+                const responseText = await response.text();
+                console.error('Contenido de la respuesta:', responseText);
+                throw new Error('La respuesta del servidor no es un JSON válido');
+            }
             
             if (!data.apiKey) {
-                console.error('No se pudo obtener la API key');
+                console.error('No se pudo obtener la API key:', data);
                 throw new Error('No se pudo obtener la API key');
             }
 
             const apiKey = data.apiKey;
+            console.log('API key obtenida correctamente');
             
             // Configurar la solicitud a la API de OpenAI
             const requestOptions = {
@@ -57,9 +74,17 @@ class PromptImprover {
             const openaiResponse = await fetch(this.apiUrl, requestOptions);
             
             if (!openaiResponse.ok) {
-                const errorData = await openaiResponse.json();
-                console.error(`Error en la API de OpenAI: ${errorData.error?.message || 'Error desconocido'}`);
-                throw new Error(`Error en la API de OpenAI: ${errorData.error?.message || 'Error desconocido'}`);
+                let errorMessage = `Error en la API de OpenAI (${openaiResponse.status})`;
+                try {
+                    const errorData = await openaiResponse.json();
+                    errorMessage += `: ${errorData.error?.message || 'Error desconocido'}`;
+                    console.error(errorMessage, errorData);
+                } catch (e) {
+                    const errorText = await openaiResponse.text();
+                    errorMessage += `: ${errorText}`;
+                    console.error(errorMessage);
+                }
+                throw new Error(errorMessage);
             }
 
             const result = await openaiResponse.json();
@@ -71,7 +96,8 @@ class PromptImprover {
             return improvedPrompt;
         } catch (error) {
             console.error('Error al mejorar el prompt:', error);
-            throw error;
+            alert(`Error al mejorar el prompt: ${error.message}`);
+            return originalPrompt; // Devolver el prompt original en caso de error
         }
     }
 }

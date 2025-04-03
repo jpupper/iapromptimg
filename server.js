@@ -197,19 +197,27 @@ wsComfy.on('message', async (data) => {
                                 prompt: details.prompt
                             };
                             
-                            // Llamar al script PHP para enviar el correo
-                            const emailResponse = await axios.post('http://localhost:3000/send-email', emailData, {
-                                headers: {
-                                    'Content-Type': 'application/json'
+                            // Verificar si ya se envió un correo para este promptId
+                            if (!details.emailSent) {
+                                // Marcar como enviado para evitar duplicados
+                                promptDetails[promptId].emailSent = true;
+                                
+                                // Llamar al script PHP para enviar el correo
+                                const emailResponse = await axios.post('http://localhost:3000/send-email', emailData, {
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    }
+                                });
+                                
+                                console.log('Respuesta del servidor de correo:', emailResponse.data);
+                                
+                                if (emailResponse.data.success) {
+                                    console.log(`Email enviado correctamente a ${details.userEmail}`);
+                                } else {
+                                    console.error(`Error al enviar email: ${emailResponse.data.message}`);
                                 }
-                            });
-                            
-                            console.log('Respuesta del servidor de correo:', emailResponse.data);
-                            
-                            if (emailResponse.data.success) {
-                                console.log(`Email enviado correctamente a ${details.userEmail}`);
                             } else {
-                                console.error(`Error al enviar email: ${emailResponse.data.message}`);
+                                console.log(`Ya se envió un correo para el promptId ${promptId}, evitando duplicado`);
                             }
                         } catch (emailError) {
                             console.error('Error al enviar el correo electrónico:', emailError);
@@ -368,6 +376,22 @@ app.post('/send-email', async (req, res) => {
     }
 });
 
+// Ruta para obtener la API key de OpenAI desde el servidor
+app.get('/api/openai-key', (req, res) => {
+    try {
+        // Verificar si la API key está configurada en el archivo config.js
+        if (config.openaiApiKey) {
+            res.json({ apiKey: config.openaiApiKey });
+        } else {
+            console.error('API key de OpenAI no configurada en config.js');
+            res.status(500).json({ error: 'API key no configurada' });
+        }
+    } catch (error) {
+        console.error('Error al obtener la API key de OpenAI:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
 wss.on('connection', async (ws, req) => {
     console.log('WebSocket client connected');
     ws.on('message', async (data) => {
@@ -420,7 +444,8 @@ wss.on('connection', async (ws, req) => {
                 equipo: message.equipo, 
                 prompt: message.prompt, 
                 userEmail: message.userEmail, 
-                userName: message.userName 
+                userName: message.userName,
+                emailSent: false // Agregar la bandera emailSent
             }; // Guarda equipo y prompt
         }
     });
@@ -754,7 +779,8 @@ async function generarImagen(promptText, equipo, steps = 25, cfg = 1.0, seed = n
             prompt: promptText, 
             steps: parseInt(steps),
             userName: userName || '',
-            userEmail: userEmail || ''
+            userEmail: userEmail || '',
+            emailSent: false // Agregar la bandera emailSent
         };
         
         return promptId;
@@ -849,7 +875,8 @@ async function generarImagenConReferencia(promptText, imagePath, equipo, steps =
             prompt: promptText, 
             steps: parseInt(steps),
             userName: userName || '',
-            userEmail: userEmail || ''
+            userEmail: userEmail || '',
+            emailSent: false // Agregar la bandera emailSent
         };
         
         return promptId;
